@@ -78,28 +78,10 @@
      (lcal (map parse-def defs) (parse body))] 
     [(list 'match val-expr cases ...) ; note the elipsis to match n elements
      (mtch (parse val-expr) (map parse-case cases))] ; cases is a list
-
-
-   [(list 'list  a ...)
-    ;(print a )
-    (if (= 1 (length a))
-        (app (id 'Cons) (list (parse (car a)) (app (id 'Empty) '())))
-        ;(parse (car a))
-        (app (id 'Cons) (list (parse (car a)) (parse (cons 'list (cdr a)))))
-     )]
-
-    
     [(list f args ...) ; same here
      (if (assq f *primitives*)
          (prim-app f (map parse args)) ; args is a list
          (app (parse f) (map parse args)))]))
-
-
-
-
-
-
-
 
 ; parse-def :: s-expr -> Def
 (define(parse-def s-expr)
@@ -164,8 +146,6 @@
      (def (cons alist body) (find-first-matching-case value-matched cases))
      (interp body (extend-env (map car alist) (map cdr alist) env))]))
 
-
-
 ; interp-def :: Def Env -> Void
 (define(interp-def d env)
 
@@ -221,12 +201,21 @@
                      #f)]
                 [(x y) (error "Match failure")]))
 
-;; run :: s-expr -> number                                                                         my shit
+;; run :: s-expr -> number
 (define(run prog)
-  (pretty-printing (interp (lcal (list List+ length+) (parse prog))   empty-env))
-  #; (interp (parse prog)   empty-env)
+ #;(interp (lcal (list
+                (datatype 'List (list (variant 'Empty '()) (variant 'Cons '(a b))))
+                (dfine 'length (fun '(l)(mtch(id 'l)
+                                             (list
+                                              (cse (constrP 'Empty '())
+                                                   (num 0))
+                                              (cse (constrP 'Cons (list (idP 'a) (idP 'b)))
+                                                   (prim-app '+ (list (num 1) (app (id 'length) (list (id 'b) ))))
+                                                   ))))))
+               (parse prog))
+          empty-env)
+   (interp (parse prog)   empty-env)
   )
-
 
 
 #|-----------------------------
@@ -297,205 +286,117 @@ update-env! :: Sym Val Env -> Void
 
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;   MYSHIT ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;                     my shit
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;   MYSHIT ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
  ; (structV name variant values)
 (define (pretty-printing expr)
   (match expr
-    [(structV name variant values)
-     (if (empty? values)
-         (string-append "{" (string-append (symbol->string (structV-variant expr)) "}" ))
-         (string-append "{" (string-append (symbol->string (structV-variant expr))
-                                           (string-append " " (string-append
-                                                               ;(car (append (map pretty-printing values)))
-                                                               (if (number? (car (append (map pretty-printing values))))
-                                                                            (number->string (car (append (map pretty-printing values))))
-                                                                            (car (append (map pretty-printing values)))
-                                                                            )
-                                                               "}")) ))
-         )]
-    [else  expr]
+    [(structV name variant values)  (if (empty? values)
+                                        (string-append "{" (string-append (symbol->string (structV-variant expr)) "}" ))
+                                        (string-append "{" (string-append (symbol->string (structV-variant expr))
+                                                                          (string-append " " (string-append (car (append (map pretty-printing values))) "}")) ))
+                                        )]
+    [num (if (number? expr)
+                (number->string expr)
+                (number->string expr)
+                 )]
+  ;  [else   (symbol->string expr) ]
     )
   )
 
 
 
-(define List+
-  (datatype 'List
-            (list (variant 'Empty '())
-                  (variant 'Cons '(a b)))) )
 
-(define length+
-  (dfine 'length (fun '(l)
-                      (mtch (id 'l)
-                            (list
-                             (cse (constrP 'Empty '())
-                                  (num 0))
-                             (cse (constrP 'Cons (list (idP 'a) (idP 'b)))
-                                  (prim-app '+ (list (num 1) (app (id 'length) (list (id 'b) ))))
-                                  ))))))
+(deftype List
+  (Empty)
+  (Cons a b))
 
-#;(define listSugar
-  (dfine 'list (fun '(l)
-                      (mtch (id 'l)
-                            (list
-
-                             (cse (constrP 'Cons (list (idP 'a) (idP 'b)))
-                                  (constrP 'Cons (list (idP 'a) (app (id 'list) (list (id 'b) ))))
-                                  )
-                             (cse (constrP 'Empty '())
-                                  'Empty )
-                             )))))
-
-
-#;(deftype ListX
-    (Empty)
-    (Cons a b))
-
-#;(define (lengthX l)
-    (match l
-      [(Empty) 0]
-      [(Cons a b) (+ 1 (length b))]
-      )
+(define (length l)
+  (match l
+    [(Empty) 0]
+    [(Cons a b) (+ 1 (length b))]
     )
-
-#;(define (listX l)
-    (match l
-      [(Cons a b) (Cons a (listX b))]
-      [(Empty) l]
-      ))
-
-
-;(listX (list (Cons '1 '2) '3 (Cons '4 (Cons '5 (Empty)))))
+  )
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;   MYTESTS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-
-;  (parse'{{fun {x y z} {+ x y z}} 1 2 3})
-
-(parse '{Cons 420 {Cons 421 {Cons 423 {Empty}}}})
-(parse '{list 420 421 423})
-666
-(run '{Cons 420 {Cons 421 {Cons 423 {Empty}}  } })
-(run '{list 420 421 423})
-666
-
-'fuckmyass
-
-
-69
-(parse '{Cons 69 {Empty}})
-(parse '{list 69})
-69
-(run '{Cons 69 {Empty}})
-(run '{list 69})
-
-(println "pizzaAndShit")
-
-
-(parse '{list a {list b c} d})
-(parse '{Cons a {Cons {Cons b c} d}})
-
-(parse '{Cons a {Cons {Cons b c} d}})
-
-(println "pizzaAndShit")
-
-(parse '{match   {list 2 {list 4 5} 6}
-              {case {Cons a {Cons {Cons b c} d}} => c}})
-
-(run '{match   {list 2 {list 4 5} 6}
-              {case {Cons a {Cons {Cons b c} d}} => c}})
+#;(run '{match {list {+ 1 1} 4 6}
+          {case {Cons h r} => h}
+          {case _ => 0}})
 
 
 
+(run '{local {{datatype Nat 
+                  {Zero} 
+                  {Succ n}}}
+          {Nat? {Zero}}})
 
 
 
+(run '{local {{datatype Nat 
+                  {Zero} 
+                  {Succ n}}}
+           {Zero}})
 
-
-(test (run '{match   {list 2 {list 4 5} 6}
-              {case {Cons a {Cons {Cons b c} d}} => c}})
-      "{Cons 5}")
-  
-#;(test (run '{match {list 2 {list 4 5} 6}
-              {case {list a {list b c} d} => d}}) 6)
-
-
-
-
+(run '{local {{datatype Nat 
+                  {Zero} 
+                  {Succ n}}}
+           {Succ {Succ {Zero}}}})
 
 
 
-(test (run '{match {list 2 6}
-              {case {Cons a {Cons b {Empty}}} => a}}) 2)
+(run '{local {{datatype Nat 
+                  {Zero} 
+                  {Succ n}}
+                {define pred {fun {n} 
+                               {match n
+                                 {case {Zero} => {Zero}}
+                                 {case {Succ m} => m}}}}}
+          {pred {Succ {Succ {Zero}}}}})
 
-(test (run '{match {list 2 6}
-              {case {Cons a {Cons b {Empty}}} => b}}) 6)
+(pretty-printing (run '{local {{datatype Nat 
+                  {Zero} 
+                  {Succ n}}}
+           {Zero}}) )
 
 
+(pretty-printing (run '{local {{datatype Nat 
+                  {Zero} 
+                  {Succ n}}}
+           {Succ {Succ {Zero}}}}))
 
 
-(test (run '{local {{datatype Nat 
-                        {Zero} 
-                        {Succ n}}}
-        {Succ {Succ {Zero}}}})
-      "{Succ {Succ {Zero}}}")
+(pretty-printing (run '{local {{datatype Nat 
+                  {Zero} 
+                  {Succ n}}
+                {define pred {fun {n} 
+                               {match n
+                                 {case {Zero} => {Zero}}
+                                 {case {Succ m} => m}}}}}
+          {pred {Succ {Succ {Zero}}}}}))
 
-
-(test (run '{local {{datatype Nat 
-                        {Zero} 
-                        {Succ n}}
-              {define pred {fun {n} 
-                                {match n
-                                  {case {Zero} => {Zero}}
-                                  {case {Succ m} => m}}}}}
-        {pred {Succ {Succ {Zero}}}}})
-      "{Succ {Zero}}")
-
-(test (pretty-printing (structV 'Bin 'Val '(1)))
-      "{Val 1}")
+(pretty-printing (structV 'Bin 'Val '(1)))
 
 ;;
-(test (run '{match {Cons {+ 1 1} 6}
-              {case {Cons h r} => h}
-              {case _ => 0}}) 2)
 
-(test (run '{match {list 2 6}
-              {case {Cons h r} => h}
-              {case _ => 0}}) 2)
-
-
-(test
- (run '{match {list {+ 1 1} 4 6}
-         {case {Cons h r} => h}
-         {case _ => 0}})2)
-
-
-
-(test (run '{local {{datatype Nat 
-                              {Zero} 
-                              {Succ n}}}
-              {Nat? {Zero}}}) #t)
-
+(length (Cons 1 (Cons 2 (Cons 3 (Empty)))))
 
 (test (run '{List? {Empty}}) #t)
 
 (test (run '{length {Empty}}) 0)
+;
 
 (test (run '{length {Cons {Empty} {Empty}}}) 1)
-
-(test (run '{length {Cons {Empty} {Cons {Empty} {Empty}}}}) 2)
-
 (test (run '{local {{datatype List 
-                              {Empty} 
-                              {Cons a b}}
-                    {define length {fun {l} 
-                                        {match l
-                                          {case {Empty} => 0}
-                                          {case {Cons a b} => {+ 1 {length b} }}}}}}
-              {length {Cons {Empty} {Empty}}}}) 1)
+                  {Empty} 
+                  {Cons a b}}
+                {define length {fun {l} 
+                                    {match l
+                                      {case {Empty} => 0}
+                                      {case {Cons a b} => {+ 1 {length b} }}}}}}
+          {length {Cons {Empty} {Empty}}}}) 1)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; TESTS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Test sub-module.
