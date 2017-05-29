@@ -78,10 +78,25 @@
      (lcal (map parse-def defs) (parse body))] 
     [(list 'match val-expr cases ...) ; note the elipsis to match n elements
      (mtch (parse val-expr) (map parse-case cases))] ; cases is a list
+
+
+    [(list 'list a ...)
+     (print a )
+     ;('Cons (list (car a) (cdr a)))
+                        ]
+
+    
     [(list f args ...) ; same here
      (if (assq f *primitives*)
          (prim-app f (map parse args)) ; args is a list
          (app (parse f) (map parse args)))]))
+
+
+
+
+
+
+
 
 ; parse-def :: s-expr -> Def
 (define(parse-def s-expr)
@@ -146,6 +161,8 @@
      (def (cons alist body) (find-first-matching-case value-matched cases))
      (interp body (extend-env (map car alist) (map cdr alist) env))]))
 
+
+
 ; interp-def :: Def Env -> Void
 (define(interp-def d env)
 
@@ -201,21 +218,12 @@
                      #f)]
                 [(x y) (error "Match failure")]))
 
-;; run :: s-expr -> number
+;; run :: s-expr -> number                                                                         my shit
 (define(run prog)
- #;(interp (lcal (list
-                (datatype 'List (list (variant 'Empty '()) (variant 'Cons '(a b))))
-                (dfine 'length (fun '(l)(mtch(id 'l)
-                                             (list
-                                              (cse (constrP 'Empty '())
-                                                   (num 0))
-                                              (cse (constrP 'Cons (list (idP 'a) (idP 'b)))
-                                                   (prim-app '+ (list (num 1) (app (id 'length) (list (id 'b) ))))
-                                                   ))))))
-               (parse prog))
-          empty-env)
-   (interp (parse prog)   empty-env)
+  (interp (lcal (list List length) (parse prog))   empty-env)
+  #; (interp (parse prog)   empty-env)
   )
+
 
 
 #|-----------------------------
@@ -286,7 +294,7 @@ update-env! :: Sym Val Env -> Void
 
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;   MYSHIT ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;   MYSHIT ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;                     my shit
 
 
  ; (structV name variant values)
@@ -307,31 +315,140 @@ update-env! :: Sym Val Env -> Void
 
 
 
+(define List
+  (datatype 'List
+            (list (variant 'Empty '())
+                  (variant 'Cons '(a b)))) )
 
-(deftype List
-  (Empty)
-  (Cons a b))
+(define length
+  (dfine 'length (fun '(l)
+                      (mtch (id 'l)
+                            (list
+                             (cse (constrP 'Empty '())
+                                  (num 0))
+                             (cse (constrP 'Cons (list (idP 'a) (idP 'b)))
+                                  (prim-app '+ (list (num 1) (app (id 'length) (list (id 'b) ))))
+                                  ))))))
 
-(define (length l)
-  (match l
-    [(Empty) 0]
-    [(Cons a b) (+ 1 (length b))]
+#;(define listSugar
+  (dfine 'list (fun '(l)
+                      (mtch (id 'l)
+                            (list
+
+                             (cse (constrP 'Cons (list (idP 'a) (idP 'b)))
+                                  (constrP 'Cons (list (idP 'a) (app (id 'list) (list (id 'b) ))))
+                                  )
+                             (cse (constrP 'Empty '())
+                                  'Empty )
+                             )))))
+
+
+(deftype ListX
+    (Empty)
+    (Cons a b))
+
+#;(define (lengthX l)
+    (match l
+      [(Empty) 0]
+      [(Cons a b) (+ 1 (length b))]
+      )
     )
-  )
+
+(define (listX l)
+    (match l
+      [(Cons a b) (Cons a (listX b))]
+      [(Empty) l]
+      ))
+
+
+;(listX (list (Cons '1 '2) '3 (Cons '4 (Cons '5 (Empty)))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;   MYTESTS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-#;(run '{match {list {+ 1 1} 4 6}
+
+  (parse'{{fun {x y z} {+ x y z}} 1 2 3})
+
+
+(parse '{Cons {Empty} {Cons {Empty} {Empty}}})
+
+ (run '{Cons {Empty} {Cons {Empty} {Empty}  } }) 
+
+
+
+
+(parse '{local {{datatype List 
+                  {Empty} 
+                  {Cons a b}}
+                {define length {fun {l} 
+                                    {match l
+                                      {case {Empty} => 0}
+                                      {case {Cons a b} => {+ 1 {length b} }}}}}
+                {define list {fun {l} 
+                                    {match l
+                                      {case {Empty} => {Empty} }
+                                      {case {list a b} => {Cons a (list b)} }}}}
+                }
+          {list 2 4 6}})
+
+
+(run '{local {{datatype List 
+                  {Empty} 
+                  {Cons a b}}
+                {define length {fun {l} 
+                                    {match l
+                                      {case {Empty} => 0}
+                                      {case {Cons a b} => {+ 1 {length b} }}}}}
+                {define list {fun {list a ...} 
+                                    {match a
+                                      {case {Empty} => 0}
+                                      {case {list a ...} => {+ 1 {length b} }}}}}
+                }
+          {list 2 4 6}})
+
+
+
+
+
+
+(run '{match {Cons 2 6}
+          {case {Cons h r} => h}
+          {case _ => 0}})
+
+(run '{match {Cons 2 {Cons 3 4}}
+          {case {Cons h r} => h}
+          {case _ => 0}})
+
+
+(parse '{match {list {+ 1 1} 4 6}
+          {case {Cons h r} => h}
+          {case _ => 0}})
+
+(run '{match {list {+ 1 1} 4 6}
           {case {Cons h r} => h}
           {case _ => 0}})
 
 
 
-(run '{local {{datatype Nat 
+
+
+(test (run '{match {list 2 {list 4 5} 6}
+          {case {Cons a {Cons {Cons b c} d}} => c}}) 5)
+  
+(test (run '{match {list 2 {list 4 5} 6}
+          {case {list a {list b c} d} => d}}) 6)
+
+
+
+
+
+
+(test (run '{local {{datatype Nat 
                   {Zero} 
                   {Succ n}}}
-          {Nat? {Zero}}})
+          {Nat? {Zero}}}) #t)
+
+
 
 
 
@@ -344,6 +461,9 @@ update-env! :: Sym Val Env -> Void
                   {Zero} 
                   {Succ n}}}
            {Succ {Succ {Zero}}}})
+
+
+
 
 
 
@@ -381,14 +501,15 @@ update-env! :: Sym Val Env -> Void
 
 ;;
 
-(length (Cons 1 (Cons 2 (Cons 3 (Empty)))))
 
 (test (run '{List? {Empty}}) #t)
 
 (test (run '{length {Empty}}) 0)
-;
 
 (test (run '{length {Cons {Empty} {Empty}}}) 1)
+
+(test (run '{length {Cons {Empty} {Cons {Empty} {Empty}}}}) 2)
+
 (test (run '{local {{datatype List 
                   {Empty} 
                   {Cons a b}}
