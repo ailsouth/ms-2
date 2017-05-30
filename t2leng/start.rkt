@@ -80,13 +80,10 @@
      (mtch (parse val-expr) (map parse-case cases))] ; cases is a list
 
 
-   [(list 'list  a ...)
-    ;(print a )
-    (if (= 1 (length a))
-        (app (id 'Cons) (list (parse (car a)) (app (id 'Empty) '())))
-        ;(parse (car a))
-        (app (id 'Cons) (list (parse (car a)) (parse (cons 'list (cdr a)))))
-     )]
+    [(list 'list  a ...)    (if (= 1 (length a))                                                                                 ;MINE
+                                (app (id 'Cons) (list (parse (car a)) (app (id 'Empty) '())))
+                                (app (id 'Cons) (list (parse (car a)) (parse (cons 'list (cdr a)))))
+                                )]
 
     
     [(list f args ...) ; same here
@@ -96,7 +93,11 @@
 
 
 
-
+(define (alist p)                                                                                                          ;MINE        
+  (match p
+    [(cons a b) (constrP 'Cons (list (parse-pattern a) (alist b)))]
+    [else (app (id 'Empty) '())]
+    ))
 
 
 
@@ -123,7 +124,10 @@
     [(? symbol?)  (idP p)]
     [(? number?)  (litP (num p))]
     [(? boolean?) (litP (bool p))]
-    [(? string?)  (litP (str p))]
+    [(? string?)  (litP (str p))]                                                                                              ;MINE
+
+    [(list 'list pattern ...) (alist pattern)]
+
     [(list ctr patterns ...) (constrP (first p) (map parse-pattern patterns))]))
 
 ;; interp :: Expr Env -> number/procedure/Struct
@@ -223,7 +227,8 @@
 
 ;; run :: s-expr -> number                                                                         my shit
 (define(run prog)
-  (pretty-printing (interp (lcal (list List+ length+) (parse prog))   empty-env))
+    (pretty-printing (interp (lcal (list List+ length+ ) (parse prog))   empty-env))
+  #;  (interp (lcal (list List+ length+ ) (parse prog))   empty-env)
   #; (interp (parse prog)   empty-env)
   )
 
@@ -300,7 +305,29 @@ update-env! :: Sym Val Env -> Void
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;   MYSHIT ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;                     my shit
 
 
- ; (structV name variant values)
+(define (concatStr listr)
+
+  (match listr
+    [(cons a b) (string-append (if (number? a)
+                                   (number->string a)
+                                   a)                                
+                               (if (equal? "" (concatStr b))
+                                   ""
+                                   (string-append " " (concatStr b))
+                                   ) )  ]
+    [else (if (string? listr)
+              listr
+              (if (symbol? listr)
+                  (symbol->string listr)
+                  (if (number? listr)
+                      (number->string listr)
+                      ""                     )))]
+    ))
+
+
+
+
+; (structV name variant values)
 (define (pretty-printing expr)
   (match expr
     [(structV name variant values)
@@ -308,16 +335,23 @@ update-env! :: Sym Val Env -> Void
          (string-append "{" (string-append (symbol->string (structV-variant expr)) "}" ))
          (string-append "{" (string-append (symbol->string (structV-variant expr))
                                            (string-append " " (string-append
-                                                               ;(car (append (map pretty-printing values)))
-                                                               (if (number? (car (append (map pretty-printing values))))
-                                                                            (number->string (car (append (map pretty-printing values))))
-                                                                            (car (append (map pretty-printing values)))
-                                                                            )
-                                                               "}")) ))
-         )]
-    [else  expr]
+                                                               (concatStr (map pretty-printing values))
+                                                               "}")) )) )]
+    [else expr]
     )
   )
+#;(structV
+   'List
+   'Cons
+   (list
+    420
+    (structV
+     'List
+     'Cons
+     (list 421 (structV 'List 'Cons (list 422 (structV 'List 'Empty '())))))))
+
+#;(Cons 420 (Cons 421 (Cons 422 'Empty )))
+
 
 
 
@@ -325,6 +359,7 @@ update-env! :: Sym Val Env -> Void
   (datatype 'List
             (list (variant 'Empty '())
                   (variant 'Cons '(a b)))) )
+
 
 (define length+
   (dfine 'length (fun '(l)
@@ -336,77 +371,62 @@ update-env! :: Sym Val Env -> Void
                                   (prim-app '+ (list (num 1) (app (id 'length) (list (id 'b) ))))
                                   ))))))
 
-#;(define listSugar
+(define SugarList+
   (dfine 'list (fun '(l)
                       (mtch (id 'l)
                             (list
-
-                             (cse (constrP 'Cons (list (idP 'a) (idP 'b)))
-                                  (constrP 'Cons (list (idP 'a) (app (id 'list) (list (id 'b) ))))
-                                  )
                              (cse (constrP 'Empty '())
-                                  'Empty )
-                             )))))
+                                  (num 0))
+                             (cse (constrP 'Cons (list (idP 'a) (idP 'b)))
+                                  (prim-app '+ (list (num 1) (app (id 'length) (list (id 'b) ))))
+                                  ))))))
 
-
-#;(deftype ListX
-    (Empty)
-    (Cons a b))
-
-#;(define (lengthX l)
-    (match l
-      [(Empty) 0]
-      [(Cons a b) (+ 1 (length b))]
-      )
-    )
-
-#;(define (listX l)
-    (match l
-      [(Cons a b) (Cons a (listX b))]
-      [(Empty) l]
-      ))
-
-
-;(listX (list (Cons '1 '2) '3 (Cons '4 (Cons '5 (Empty)))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;   MYTESTS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-;  (parse'{{fun {x y z} {+ x y z}} 1 2 3})
-
-(parse '{Cons 420 {Cons 421 {Cons 423 {Empty}}}})
-(parse '{list 420 421 423})
-666
-(run '{Cons 420 {Cons 421 {Cons 423 {Empty}}  } })
-(run '{list 420 421 423})
-666
-
-'fuckmyass
 
 
-69
-(parse '{Cons 69 {Empty}})
-(parse '{list 69})
-69
-(run '{Cons 69 {Empty}})
-(run '{list 69})
-
-(println "pizzaAndShit")
 
 
-(parse '{list a {list b c} d})
-(parse '{Cons a {Cons {Cons b c} d}})
 
-(parse '{Cons a {Cons {Cons b c} d}})
+#;  (list
+     (cse
+      (constrP
+       'Cons
+       (list
+        (idP 'a)
+        (constrP 'Cons (list (constrP 'Cons (list (idP 'b) (idP 'c))) (idP 'd)))))
+      (id 'c)))
 
-(println "pizzaAndShit")
+#; (list
+    (cse
+     (constrP
+      'Cons
+      (list
+       (idP 'a)
+       (constrP 'Cons (list (constrP 'Cons (list (idP 'b) (constrP 'Cons (list (idP 'c) (app (id 'Empty) '())))))
+         (constrP 'Cons (list (idP 'd) (app (id 'Empty) '())))))))
+     (id 'c)))
 
-(parse '{match   {list 2 {list 4 5} 6}
-              {case {Cons a {Cons {Cons b c} d}} => c}})
 
-(run '{match   {list 2 {list 4 5} 6}
-              {case {Cons a {Cons {Cons b c} d}} => c}})
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;
+
+  
 
 
 
@@ -417,10 +437,84 @@ update-env! :: Sym Val Env -> Void
 
 (test (run '{match   {list 2 {list 4 5} 6}
               {case {Cons a {Cons {Cons b c} d}} => c}})
-      "{Cons 5}")
-  
-#;(test (run '{match {list 2 {list 4 5} 6}
+      "{Cons 5 {Empty}}")
+(parse '{match   {list 2 {list 4 5} 6}
+              {case {Cons a {Cons {Cons b c} d}} => c}})
+
+
+(test (run '{match   {list 2 {list 4 5} 6}
+              {case {list a {list b c} d} => c}})
+      "{Cons 5 {Empty}}")
+(parse '{match   {list 2 {list 4 5} 6}
+              {case {list a {list b c} d} => c}})
+
+
+
+
+
+
+
+#;(parse '{local {
+                  {datatype List {Empty}
+                            {Cons a b}}       
+                  {define length {fun {l} 
+                                      {match l
+                                        {case {Empty} => 0}
+                                        {case {Cons a b} => {+ 1 {length b} }}}}}
+                  {define list {fun {l} 
+                                    {match l
+                                      {case {Cons a {Empty}} => a}
+                                      {case {Cons a b} => {list a {list b} }}}}} }
+            {list 2 6}            }) 
+#;(parse '{list 2 6}       ) 
+#;(parse '{Cons 2 {Cons 6 {Empty}}}       ) 
+#;(parse '{match {list 2 {list 4 5} 6}
+            {case {list a {list b c} d} => d}})
+#;(run '{match {list 2 {list 4 5} 6}
+          {case {list a {list b c} d} => d}})
+(test (run '{match {list 2 {list 4 5} 6}
               {case {list a {list b c} d} => d}}) 6)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(run '{Cons 420 {Cons 421 {Cons 422 {Empty}}  } })
+(run '{list 420 421 422})
+69
+(run '{Cons 69 {Empty}})
+(run '{list 69})
+
+
+(println "pizzaAndShit")
+
+
+(parse '{match   {list 2 {list 4 5} 6}
+              {case {Cons a {Cons {Cons b c} d}} => c}})
+
+(run '{match   {list 2 {list 4 5} 6}
+              {case {Cons a {Cons {Cons b c} d}} => c}})
+
+(println "pizzaAndShit")
+
+
 
 
 
@@ -433,7 +527,6 @@ update-env! :: Sym Val Env -> Void
 
 (test (run '{match {list 2 6}
               {case {Cons a {Cons b {Empty}}} => b}}) 6)
-
 
 
 
@@ -569,13 +662,13 @@ update-env! :: Sym Val Env -> Void
 ;tests for extended MiniScheme+ 
 #;(module+ sanity-tests
     (test (run '{local {{datatype Nat 
-                  {Zero} 
-                  {Succ n}}
-                {define pred {fun {n} 
-                               {match n
-                                 {case {Zero} => {Zero}}
-                                 {case {Succ m} => m}}}}}
-          {pred {Succ {Succ {Zero}}}}}) "{Succ {Zero}}")
+                                  {Zero} 
+                                  {Succ n}}
+                        {define pred {fun {n} 
+                                          {match n
+                                            {case {Zero} => {Zero}}
+                                            {case {Succ m} => m}}}}}
+                  {pred {Succ {Succ {Zero}}}}}) "{Succ {Zero}}")
   
 (test (run
  `{local ,stream-lib
@@ -598,3 +691,6 @@ update-env! :: Sym Val Env -> Void
 (run `{local ,stream-lib
                {local {,stream-take ,merge-sort ,fibs ,stream-zipWith}
                  {stream-take 10 {merge-sort fibs fibs}}}})   "{list 1 1 1 1 2 2 3 3 5 5}"))
+
+
+
