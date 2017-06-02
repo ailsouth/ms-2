@@ -65,6 +65,11 @@
   (litP l) ; valor literal 
   (constrP ctr patterns)) ; constructor y sub-patrones
 
+
+
+
+
+
 ;; parse :: s-expr -> Expr
 (define(parse s-expr)
   (match s-expr
@@ -78,14 +83,10 @@
      (lcal (map parse-def defs) (parse body))] 
     [(list 'match val-expr cases ...) ; note the elipsis to match n elements
      (mtch (parse val-expr) (map parse-case cases))] ; cases is a list
-
-
-    [(list 'list  a ...)    (if (= 1 (length a))                                                                                 ;MINE
+    [(list 'list  a ...)    (if (= 1 (length a))                               ;MINE
                                 (app (id 'Cons) (list (parse (car a)) (app (id 'Empty) '())))
                                 (app (id 'Cons) (list (parse (car a)) (parse (cons 'list (cdr a)))))
                                 )]
-
-    
     [(list f args ...) ; same here
      (if (assq f *primitives*)
          (prim-app f (map parse args)) ; args is a list
@@ -93,12 +94,13 @@
 
 
 
-(define (alist p)                                                                                                          ;MINE        
+
+
+(define (alist p)                                                              ;MINE        
   (match p
     [(cons a b) (constrP 'Cons (list (parse-pattern a) (alist b)))]
-    [else (app (id 'Empty) '())]
+    [else (constrP 'Empty '())]
     ))
-
 
 
 
@@ -124,11 +126,109 @@
     [(? symbol?)  (idP p)]
     [(? number?)  (litP (num p))]
     [(? boolean?) (litP (bool p))]
-    [(? string?)  (litP (str p))]                                                                                              ;MINE
+    [(? string?)  (litP (str p))]                                        ;MINE
 
     [(list 'list pattern ...) (alist pattern)]
 
     [(list ctr patterns ...) (constrP (first p) (map parse-pattern patterns))]))
+
+
+
+
+
+
+
+
+(define (strict e)                                        ;MINE
+  (match e
+    [(exprV expr env) (strict (interp expr env))]
+    [else e]))
+
+
+;; lazyVal
+(deftype Val                                        ;MINE
+  (exprV expr env))
+
+(deftype isLazyExpr
+  (lexpr exp bool)
+  )
+
+(define (lazyList fun-expr)
+  (match fun-expr
+    [ (fun id body) (map (lambda (i) (match i
+                                       [(list 'lazy x) #t]
+                                       [else #f])) id)]
+    [else #f]
+    )
+  )
+
+(define (deleteLazy idList)                                        ;MINE
+  (match idList
+    [(cons (list 'lazy a) b) (cons a (deleteLazy b))]
+    [(cons a b) (cons a (deleteLazy b))]
+    [else '()]
+   ))
+
+
+(define (replaceLazy fun-expr)                                        ;MINE
+  (match fun-expr
+    [ (fun id body) (fun (deleteLazy id) body)]
+    [else fun-expr]
+    )
+  )
+
+#;(define (matchLazy expr env)                                        
+    (match expr
+      [(prim-app prim arg-expr-list)       (exprV expr env)]
+      [else (interp expr env)]    ))
+
+
+(define (matchLazy expr env )                                        ;MINE
+  ;(println expr)
+   (if (lexpr-bool expr)
+       (exprV (lexpr-exp expr) env)
+       (interp (lexpr-exp expr) env) )
+  )
+
+
+
+
+(define (lazyTuplas aelist llist)
+;  (println llist)
+  (def nllist (if (or (equal? llist '())
+                      (equal? llist #f))
+                  (list #f #f )
+                  llist))
+  (match aelist
+    [(cons a b) (cons (lexpr a (car nllist)) (lazyTuplas b (cdr nllist)))]
+    [else '()]
+    )
+  )
+
+
+(define  (lazyApp fun-expr arg-expr-list env )                                         ;MINE
+
+  (def Newfun-expr (replaceLazy fun-expr))
+  (def llist (lazyList fun-expr))
+  (def ltuplas (lazyTuplas arg-expr-list (lazyList fun-expr)))
+  (  (interp Newfun-expr env)
+     (map  (λ (e)
+             (matchLazy e env)  
+             )
+           ltuplas)
+     )
+  )
+
+#;(define  (lazyApp fun-expr arg-expr-list env )                                         
+    ; (println fun-expr)
+    ;(println (replaceLazy fun-expr))
+    (def Newfun-expr (replaceLazy fun-expr))
+    (def llist (lazyList fun-expr))
+    (  (interp Newfun-expr env)
+       (map  (λ (a) (matchLazy a env llist )) arg-expr-list)
+       ; (map (λ (a) (interp a env)) arg-expr-list)
+       )
+    )
 
 ;; interp :: Expr Env -> number/procedure/Struct
 (define(interp expr env)
@@ -137,36 +237,77 @@
     [(num n) n]
     [(bool b) b]
     [(str s) s]
+    
     ; conditional
     [(ifc c t f)
-     (if (interp c env)
-         (interp t env)
-         (interp f env))]
+     (if  (interp c env)
+          (interp t env)
+          (interp f env))]
+    
     ; identifier
     [(id x) (env-lookup x env)]
+    
     ; function (notice the meta interpretation)
     [(fun ids body)
-     (λ (arg-vals)
-       (interp body (extend-env ids arg-vals env)))]
+
+     (λ (arg-vals)  (interp body (extend-env ids arg-vals env)))]
     ; application
-    [(app fun-expr arg-expr-list)
-     ((interp fun-expr env)
-      (map (λ (a) (interp a env)) arg-expr-list))]
+    [(app fun-expr arg-expr-list)                                                      ;"mine"
+     (lazyApp fun-expr arg-expr-list env )
+     ]
+
     ; primitive application
     [(prim-app prim arg-expr-list)
      (apply (cadr (assq prim *primitives*))
-            (map (λ (a) (interp a env)) arg-expr-list))]
+            (map (λ (a)  (interp a env)) arg-expr-list))]
+    
     ; local definitions
     [(lcal defs body)
-     
-     (def new-env (extend-env '() '() env))            
-     (for-each (λ (d) (interp-def d new-env)) defs) 
-     (interp body new-env)]
+     (def new-env (extend-env '() '() env))
+     (for-each (λ (d) (interp-def d new-env)) defs)                                    ;"mine"
+     (interp body new-env)
+     ]
+    
     ; pattern matching
     [(mtch expr cases)
      (def value-matched (interp expr env))
      (def (cons alist body) (find-first-matching-case value-matched cases))
-     (interp body (extend-env (map car alist) (map cdr alist) env))]))
+     (interp body (extend-env (map car alist) (map cdr alist) env))]
+    ))
+
+
+
+
+
+;defs todo el rato
+#;(list (datatype 'List (list (variant 'Empty '())
+                              (variant 'Cons '(a b))))
+        (dfine 'length (fun '(l) (mtch (id 'l) (list (cse (constrP 'Empty '())
+                                                          (num 0))
+                                                     (cse (constrP 'Cons (list (idP 'a) (idP 'b)))
+                                                          (prim-app '+ (list (num 1) (app (id 'length) (list (id 'b)))))))))))
+
+;defs:------
+;body:
+#;(app (fun '(x (lazy y)) (id 'x))                            ;fun-expr
+       (list (num 42)
+             (prim-app '/ (list (num 1) (num 0)))))  ;arg-expr-list
+
+;------
+
+;defs:
+#;(list (datatype 'T (list (variant 'C '((lazy a)))))
+        (dfine 'x (app (id 'C) (list (prim-app '/ (list (num 1) (num 0)))))))
+
+;body(s):
+#;  (app (id 'T?) (list (id 'x)))
+
+
+
+
+
+
+
 
 
 
@@ -189,15 +330,12 @@
                env))
 
 ; interp-variant :: String String Env -> Void
-(define(interp-variant name var env)  
-  ;; name of the variant or dataconstructor
-  (def varname (variant-name var))  
-  ;; variant data constructor, eg. Zero, Succ
-  (update-env! varname
+(define(interp-variant name var env)
+  (def varname (variant-name var))  ;; name of the variant or dataconstructor
+  (update-env! varname              ;; variant data constructor, eg. Zero, Succ
                (λ (args) (structV name varname args))
                env)
-  ;; variant predicate, eg. Zero?, Succ?
-  (update-env! (string->symbol (string-append (symbol->string varname) "?"))
+  (update-env! (string->symbol (string-append (symbol->string varname) "?")) ;; variant predicate, eg. Zero?, Succ?
                (λ (v) (symbol=? (structV-variant (first v)) varname))
                env))
 
@@ -227,9 +365,10 @@
 
 ;; run :: s-expr -> number                                                                         my shit
 (define(run prog)
-    (pretty-printing (interp (lcal (list List+ length+ ) (parse prog))   empty-env))
-  #;  (interp (lcal (list List+ length+ ) (parse prog))   empty-env)
-  #; (interp (parse prog)   empty-env)
+    ;(println (interp (lcal (list List+ length+ ) (lazyParse(parse prog)))   empty-env))
+    ;(pretty-printing (interp (lcal (list List+ length+ ) (parse prog))   empty-env))
+      (pretty-printing (strict (interp  (lcal (list List+ length+ ) (parse prog))   empty-env) ))
+
   )
 
 
@@ -300,58 +439,7 @@ update-env! :: Sym Val Env -> Void
 
 
 
-
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;   MYSHIT ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;                     my shit
-
-
-(define (concatStr listr)
-
-  (match listr
-    [(cons a b) (string-append (if (number? a)
-                                   (number->string a)
-                                   a)                                
-                               (if (equal? "" (concatStr b))
-                                   ""
-                                   (string-append " " (concatStr b))
-                                   ) )  ]
-    [else (if (string? listr)
-              listr
-              (if (symbol? listr)
-                  (symbol->string listr)
-                  (if (number? listr)
-                      (number->string listr)
-                      ""                     )))]
-    ))
-
-
-
-
-; (structV name variant values)
-(define (pretty-printing expr)
-  (match expr
-    [(structV name variant values)
-     (if (empty? values)
-         (string-append "{" (string-append (symbol->string (structV-variant expr)) "}" ))
-         (string-append "{" (string-append (symbol->string (structV-variant expr))
-                                           (string-append " " (string-append
-                                                               (concatStr (map pretty-printing values))
-                                                               "}")) )) )]
-    [else expr]
-    )
-  )
-#;(structV
-   'List
-   'Cons
-   (list
-    420
-    (structV
-     'List
-     'Cons
-     (list 421 (structV 'List 'Cons (list 422 (structV 'List 'Empty '())))))))
-
-#;(Cons 420 (Cons 421 (Cons 422 'Empty )))
-
 
 
 
@@ -383,172 +471,171 @@ update-env! :: Sym Val Env -> Void
 
 
 
+
+
+;;-
+
+
+
+
+
+(define (concatStr listr)
+  (match listr
+    [(cons a b) (string-append (if (number? a)
+                                   (number->string a)
+                                   a)                                
+                               (if (equal? "" (concatStr b))
+                                   ""
+                                   (string-append " " (concatStr b))
+                                   ) )  ]
+    [else (if (string? listr)
+              listr
+              (if (symbol? listr)
+                  (symbol->string listr)
+                  (if (number? listr)
+                      (number->string listr)
+                      ""                     )))]
+    ))
+
+
+
+
+; (structV name variant values)
+(define (pretty-printing expr)
+  (let ([listedExpr (pretty-list expr)])
+  (match listedExpr
+    [(structV name variant values)
+     (if (empty? values)
+         (string-append "{" (string-append (symbol->string (structV-variant listedExpr)) "}" ))
+         (string-append "{" (string-append (symbol->string (structV-variant listedExpr))
+                                           (string-append " " (string-append
+                                                               (concatStr (map pretty-printing values))
+                                                               "}")) )) )]
+    [else listedExpr]
+    )   )
+  )
+  
+(define (pretty-list expr)
+  (match expr
+    [(structV 'List 'Cons (list a b)) (if (isList b)
+                                          (structV 'List 'list (getList expr))
+                                          (structV 'List 'Cons (cons (pretty-list a) (pretty-list b)))
+                                          )     ]
+    [else expr])
+  )
+
+(define (isList cons)
+  (match cons
+    [(structV 'List 'Empty '()) #t]
+    [(structV 'List 'Cons (list a b))  (isList b)]
+    [else #f]
+    ))
+
+(define (getList lst)
+  (match lst
+    [(structV 'List 'Empty '()) '()]
+    [(structV 'List 'Cons (list a b))  (cons (pretty-list a) (getList b))]
+   ))
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;   MYTESTS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-
-
-
-
-
-#;  (list
-     (cse
-      (constrP
-       'Cons
-       (list
-        (idP 'a)
-        (constrP 'Cons (list (constrP 'Cons (list (idP 'b) (idP 'c))) (idP 'd)))))
-      (id 'c)))
-
-#; (list
-    (cse
-     (constrP
-      'Cons
-      (list
-       (idP 'a)
-       (constrP 'Cons (list (constrP 'Cons (list (idP 'b) (constrP 'Cons (list (idP 'c) (app (id 'Empty) '())))))
-         (constrP 'Cons (list (idP 'd) (app (id 'Empty) '())))))))
-     (id 'c)))
-
-
-
-
-
-
-
-
-
-
-
-
-
+(print-only-errors #t)
 
 
 ;;
-
-  
-
-
-
-
-
-
-
-
-(test (run '{match   {list 2 {list 4 5} 6}
-              {case {Cons a {Cons {Cons b c} d}} => c}})
-      "{Cons 5 {Empty}}")
-(parse '{match   {list 2 {list 4 5} 6}
-              {case {Cons a {Cons {Cons b c} d}} => c}})
+(test
+(run '{local {{datatype T 
+                  {C {lazy a}}}
+                {define x {C {+ 1 0}}}
+                {define y {C {/ 1 0}}}}
+          {match x
+            {case {C a} => a}}})
+1)
 
 
-(test (run '{match   {list 2 {list 4 5} 6}
-              {case {list a {list b c} d} => c}})
-      "{Cons 5 {Empty}}")
-(parse '{match   {list 2 {list 4 5} 6}
-              {case {list a {list b c} d} => c}})
+(test (run '{local {{datatype T 
+                              {C {lazy a}}}
+                    {define x {C {/ 1 0}}}}
+              {T? x}})
+      #t)
+
+
+(test/exn (run '{{fun {x  y} x} 1 {/ 1 0}}) "/: division by zero")
+(test/exn (run '{{fun {x  {lazy y}} y} 1 {/ 1 0}}) "/: division by zero")
+
+
+;(run '{{fun {x y} x} 42 {/ 1 0}})
+
+#;(parse '{{fun {x  y} x} 1 {/ 1 0}})
+#;(run   '{{fun {x  y} x} 1 {/ 1 0}})
+(parse   '{{fun {x  {lazy y}} x} 1 {/ 1 0}})
 
 
 
+(run '{{fun {x  {lazy y}} x} 1 {/ 1 0}})
 
-
-
-
-#;(parse '{local {
-                  {datatype List {Empty}
-                            {Cons a b}}       
-                  {define length {fun {l} 
-                                      {match l
-                                        {case {Empty} => 0}
-                                        {case {Cons a b} => {+ 1 {length b} }}}}}
-                  {define list {fun {l} 
-                                    {match l
-                                      {case {Cons a {Empty}} => a}
-                                      {case {Cons a b} => {list a {list b} }}}}} }
-            {list 2 6}            }) 
-#;(parse '{list 2 6}       ) 
-#;(parse '{Cons 2 {Cons 6 {Empty}}}       ) 
-#;(parse '{match {list 2 {list 4 5} 6}
-            {case {list a {list b c} d} => d}})
-#;(run '{match {list 2 {list 4 5} 6}
-          {case {list a {list b c} d} => d}})
-(test (run '{match {list 2 {list 4 5} 6}
-              {case {list a {list b c} d} => d}}) 6)
+(parse '{local {{datatype T 
+                              {C {lazy a}}}
+                    {define x {C {/ 1 0}}}}
+              {T? x}})
 
 
 
 
 
 
+#;(test
+   (run '{local {{datatype Cache 
+                           {Empty} 
+                           {Cons a b}}
+                 {define length {fun {l} 
+                                   {match l
+                                     {case {Empty} => 0}
+                                     {case {Cons a b} => {+ 1 {length b} }}}}}}
+           {length {Cons {Empty} {Empty}}}})
+   1)
+
+
+
+
+#;(app (fun '(x (lazy y)) (id 'x)) (list (num 1) (prim-app '/ (list (num 1) (num 0)))))
+#;(app (fun '(x y)        (id 'x)) (list (num 1) (prim-app '/ (list (num 1) (num 0)))))
+
+
+
+
+(test (run '{{fun {x  {lazy y}} x} 1 {/ 1 0}}) 1)
+(test (run '{{fun {{lazy x}  {lazy y}} x} 1 {/ 1 0}}) 1)
 
 
 
 
 
 
+(println "vVvVvVvVvVvV      TODO WeNo QL     vVvVvVvVvVvV")
 
 
-
-
-
-
-
-
-
-
-(run '{Cons 420 {Cons 421 {Cons 422 {Empty}}  } })
-(run '{list 420 421 422})
-69
-(run '{Cons 69 {Empty}})
-(run '{list 69})
-
-
-(println "pizzaAndShit")
-
-
-(parse '{match   {list 2 {list 4 5} 6}
-              {case {Cons a {Cons {Cons b c} d}} => c}})
-
-(run '{match   {list 2 {list 4 5} 6}
-              {case {Cons a {Cons {Cons b c} d}} => c}})
-
-(println "pizzaAndShit")
-
-
-
-
-
-
-
-
-
-(test (run '{match {list 2 6}
-              {case {Cons a {Cons b {Empty}}} => a}}) 2)
-
-(test (run '{match {list 2 6}
-              {case {Cons a {Cons b {Empty}}} => b}}) 6)
 
 
 
 (test (run '{local {{datatype Nat 
-                        {Zero} 
-                        {Succ n}}}
-        {Succ {Succ {Zero}}}})
+                              {Zero} 
+                              {Succ n}}}
+              {Succ {Succ {Zero}}}})
       "{Succ {Succ {Zero}}}")
 
 
 (test (run '{local {{datatype Nat 
-                        {Zero} 
-                        {Succ n}}
-              {define pred {fun {n} 
-                                {match n
-                                  {case {Zero} => {Zero}}
-                                  {case {Succ m} => m}}}}}
-        {pred {Succ {Succ {Zero}}}}})
+                              {Zero} 
+                              {Succ n}}
+                    {define pred {fun {n} 
+                                      {match n
+                                        {case {Zero} => {Zero}}
+                                        {case {Succ m} => m}}}}}
+              {pred {Succ {Succ {Zero}}}}})
       "{Succ {Zero}}")
-
-(test (pretty-printing (structV 'Bin 'Val '(1)))
-      "{Val 1}")
 
 ;;
 (test (run '{match {Cons {+ 1 1} 6}
@@ -589,6 +676,55 @@ update-env! :: Sym Val Env -> Void
                                           {case {Empty} => 0}
                                           {case {Cons a b} => {+ 1 {length b} }}}}}}
               {length {Cons {Empty} {Empty}}}}) 1)
+
+(test (run '{match   {list 2 {list 4 5} 6}
+              {case {list a {list b c} d} => c}})  5)
+
+(test (run '{match   {list 2 {list 4 5} 6}
+              {case {Cons a (Cons {Cons b (Cons c {Empty})} (Cons d {Empty}) )} => c}}) 5)
+  
+(test (run '{match {list 2 {list 4 5} 6}
+              {case {list a {list b c} d} => d}}) 6)
+
+(test (run '{match {list 2 4 8 16}
+              {case {list a b c d} => b}}) 4)
+
+(test (run '{match {list 2 4 8 16}
+              {case {Cons a b} => b}}) "{list 4 8 16}")
+
+(test (run '{match {list 2 6}
+              {case {Cons a {Cons b {Empty}}} => a}}) 2)
+
+(test (run '{match {list 2 6}
+              {case {Cons a {Cons b {Empty}}} => b}}) 6)
+
+(test (run '{list 2 4 6})
+      "{list 2 4 6}")
+
+(test(run '{list 2 {list 4 5} 6})
+     "{list 2 {list 4 5} 6}")  
+(test (run '{Cons 2 (Cons {Cons 4 (Cons 5 {Empty})} (Cons 6 {Empty}) )})
+      "{list 2 {list 4 5} 6}")   
+
+(test (run '{match   {list 2 {list 4 5} 6}
+              {case {list a b c} => b}})  "{list 4 5}")
+
+(test (run '{match   {list 2 {list 4 5} 6}
+              {case {Cons a {Cons {Cons b c} d}} => c}})
+      "{list 5}")
+
+
+
+(test (run '{local {{datatype BinTree 
+                              {Leaf v} 
+                              {Node v l r}}}
+              {Node 10 {Leaf 7} {Leaf 2}}})
+      "{Node 10 {Leaf 7} {Leaf 2}}")
+
+(test (pretty-printing (structV 'Bin 'Val '(1)))
+      "{Val 1}")
+
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; TESTS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Test sub-module.
