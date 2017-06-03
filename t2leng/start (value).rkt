@@ -65,11 +65,6 @@
   (litP l) ; valor literal 
   (constrP ctr patterns)) ; constructor y sub-patrones
 
-
-
-
-
-
 ;; parse :: s-expr -> Expr
 (define(parse s-expr)
   (match s-expr
@@ -83,10 +78,14 @@
      (lcal (map parse-def defs) (parse body))] 
     [(list 'match val-expr cases ...) ; note the elipsis to match n elements
      (mtch (parse val-expr) (map parse-case cases))] ; cases is a list
-    [(list 'list  a ...)    (if (= 1 (length a))                               ;MINE
+
+
+    [(list 'list  a ...)    (if (= 1 (length a))                                                                                 ;MINE
                                 (app (id 'Cons) (list (parse (car a)) (app (id 'Empty) '())))
                                 (app (id 'Cons) (list (parse (car a)) (parse (cons 'list (cdr a)))))
                                 )]
+
+    
     [(list f args ...) ; same here
      (if (assq f *primitives*)
          (prim-app f (map parse args)) ; args is a list
@@ -94,13 +93,12 @@
 
 
 
-
-
-(define (alist p)                                                              ;MINE        
+(define (alist p)                                                                                                          ;MINE        
   (match p
     [(cons a b) (constrP 'Cons (list (parse-pattern a) (alist b)))]
     [else (constrP 'Empty '())]
     ))
+
 
 
 
@@ -126,113 +124,11 @@
     [(? symbol?)  (idP p)]
     [(? number?)  (litP (num p))]
     [(? boolean?) (litP (bool p))]
-    [(? string?)  (litP (str p))]                                        ;MINE
+    [(? string?)  (litP (str p))]                                                                                              ;MINE
 
     [(list 'list pattern ...) (alist pattern)]
 
     [(list ctr patterns ...) (constrP (first p) (map parse-pattern patterns))]))
-
-
-
-
-
-
-
-
-#;(define (strict e)                                        ;MINE
-  (match e
-    [(exprV expr env) (strict (interp expr env))]
-    [else e]))
-
-
-
-(define (strict e)
-  (match e
-    [(exprV expr env cache)
-     (if (not (unbox cache))
-         (local ([def val (strict (interp expr env))])
-           ;(printf "Forcing exprV to ~v~n" val)
-           (set-box! cache val)
-           val)
-         (begin
-           ;(printf "Using cached value~v~n" (unbox cache))
-           (unbox cache)))]
-    [else e]))
-
-
-
-;; lazyVal
-(deftype Val                                        ;MINE
-  (exprV expr env cache))
-
-(deftype isLazyExpr
-  (lexpr exp bool)
-  )
-
-(define (lazyList fun-expr)
-  (match fun-expr
-    [ (fun id body) (map (lambda (i) (match i
-                                       [(list 'lazy x) #t]
-                                       [else #f])) id)]
-    [else #f]
-    )
-  )
-
-(define (deleteLazy idList)                                        ;MINE
-  (match idList
-    [(cons (list 'lazy a) b) (cons a (deleteLazy b))]
-    [(cons a b) (cons a (deleteLazy b))]
-    [else '()]
-   ))
-
-
-(define (replaceLazy fun-expr)                                        ;MINE
-  (match fun-expr
-    [ (fun id body) (fun (deleteLazy id) body)]
-    [else fun-expr] 
-    )
-  )
-
-
-
-(define (matchLazy expr env )                                        ;MINE
-  ;(println expr)
-   (if (lexpr-bool expr)
-       (exprV (lexpr-exp expr) env (box #f))
-       (interp (lexpr-exp expr) env) )
-  )
-
-
-
-
-(define (lazyTuplas aelist llist)
-;  (println llist)
-  (def nllist (if (or (equal? llist '())
-                      (equal? llist #f))
-                  (list #f #f )
-                  llist))
-  (match aelist
-    [(cons a b) (cons (lexpr a (car nllist)) (lazyTuplas b (cdr nllist)))]
-    [else '()]
-    )
-  )
-
-
-(define  (lazyApp fun-expr arg-expr-list env )                                         ;MINE
-
-  (def Newfun-expr (replaceLazy fun-expr))
-  (def llist (lazyList fun-expr))
-  (def ltuplas (lazyTuplas arg-expr-list (lazyList fun-expr)))
-  (  (interp Newfun-expr env)
-     (map  (λ (e)  (matchLazy e env)     )
-           ltuplas)
-     )
-  )
-
-
-
-
-
 
 ;; interp :: Expr Env -> number/procedure/Struct
 (define(interp expr env)
@@ -241,152 +137,67 @@
     [(num n) n]
     [(bool b) b]
     [(str s) s]
-    
     ; conditional
     [(ifc c t f)
-     (if  (interp c env)
-          (interp t env)
-          (interp f env))]
-    
+     (if (interp c env)
+         (interp t env)
+         (interp f env))]
     ; identifier
-    [(id x) (strict (env-lookup x env))]
-    
+    [(id x) (env-lookup x env)]
     ; function (notice the meta interpretation)
     [(fun ids body)
-     (λ (arg-vals)  (interp body (extend-env ids arg-vals env)))]
-    
+     (λ (arg-vals)
+       (interp body (extend-env ids arg-vals env)))]
     ; application
-    [(app fun-expr arg-expr-list)                                                      ;"mine"
-     (lazyApp fun-expr arg-expr-list env )
-     ]
-
+    [(app fun-expr arg-expr-list)
+     ((interp fun-expr env)
+      (map (λ (a) (interp a env)) arg-expr-list))]
     ; primitive application
     [(prim-app prim arg-expr-list)
      (apply (cadr (assq prim *primitives*))
-            (map (λ (a)  (interp a env)) arg-expr-list))]
-    
+            (map (λ (a) (interp a env)) arg-expr-list))]
     ; local definitions
     [(lcal defs body)
-     (def new-env (extend-env '() '() env))
+     
+     (def new-env (extend-env '() '() env))            
      (for-each (λ (d) (interp-def d new-env)) defs) 
-     (interp body new-env)
-     ]
-    
+     (interp body new-env)]
     ; pattern matching
     [(mtch expr cases)
      (def value-matched (interp expr env))
      (def (cons alist body) (find-first-matching-case value-matched cases))
-     (interp body (extend-env (map car alist) (map cdr alist) env))]
-    ))
+     (interp body (extend-env (map car alist) (map cdr alist) env))]))
 
 
-
-
-
-;defs todo el rato
-#;(list (datatype 'List (list (variant 'Empty '())
-                              (variant 'Cons '(a b))))
-        (dfine 'length (fun '(l) (mtch (id 'l) (list (cse (constrP 'Empty '())
-                                                          (num 0))
-                                                     (cse (constrP 'Cons (list (idP 'a) (idP 'b)))
-                                                          (prim-app '+ (list (num 1) (app (id 'length) (list (id 'b)))))))))))
-
-;defs:------
-;body:
-#;(app (fun '(x (lazy y)) (id 'x))                            ;fun-expr
-       (list (num 42)
-             (prim-app '/ (list (num 1) (num 0)))))  ;arg-expr-list
-
-;------
-
-;defs:
-#;(list (datatype 'T (list (variant 'C '((lazy a)))))
-        (dfine 'x (app (id 'C) (list (prim-app '/ (list (num 1) (num 0)))))))
-
-;body(s):
-#;  (app (id 'T?) (list (id 'x)))
-
-
-(define (lazyList-def var)
-  (match var
-    [ (variant name params) (if(equal? '() params)
-                               #f
-                               (map (lambda (p)
-                                   (match p
-                                     [(list 'lazy x) #t]
-                                     [else #f])) params))]
-    [else #f]
-    )
-  )
-
-(define (deleteLazy-def idList)                                        ;MINE
-  (match idList
-    [(cons (list 'lazy a) b) (cons a (deleteLazy-def b))]
-    [(cons a b) (cons a (deleteLazy-def b))]
-    [else '()]
-   ))
-
-
-(define (replaceLazy-def var)                                        ;MINE
-  (match var
-    [ (variant name params)  (variant name (deleteLazy-def params) )]
-    [else var] 
-    )
-  )
-
-
-(define(env-lookup-def id env)
-  ;(println id)
-  (match env
-    [(mtEnv) #f]
-    [(aEnv bindings rest)
-     (def binding (assoc id bindings))
-  ;;;;;;;;;;   (println bindings)
-     (if binding
-         (cdr binding)
-         (env-lookup-def id rest))]))
 
 ; interp-def :: Def Env -> Void
 (define(interp-def d env)
-  ;(println d)
+
   (match d
-    [(dfine id val-expr)     ; (println id)
-                             ; (println val-expr)
-                            ; ; (println env)
-                             ;; (println (env-lookup-def 'C env))
-                              ;(println  "")
-                              
-                               (update-env! id (exprV val-expr env (box #f)) env)
-     ;(update-env! id (interp val-expr env) env)
-     ]
-    [(datatype name variants)     ;; extend environment with new definitions corresponding to the datatype
-         (interp-datatype name env)
-         (for-each (λ (v) (interp-variant name v env)) variants)]))
+    [(dfine id val-expr)
+     (update-env! id (interp val-expr env) env)]
+    [(datatype name variants)
+     ;; extend environment with new definitions corresponding to the datatype
+     (interp-datatype name env)
+     (for-each (λ (v) (interp-variant name v env)) variants)]))
 
 ; interp-datatype :: String Env -> Void
-(define(interp-datatype name env)  ; datatype predicate, eg. Nat?
- ; (println name)
+(define(interp-datatype name env)
+  ; datatype predicate, eg. Nat?
   (update-env! (string->symbol (string-append (symbol->string name) "?"))
                (λ (v) (symbol=? (structV-name (first v)) name))
                env))
 
 ; interp-variant :: String String Env -> Void
-(define(interp-variant name var env)
- ; (println  var)
- ; (println  (variant-params var))
-  (print "nVariant: ")  (println  (replaceLazy-def var)  )
-  (print "llist:    ")  (println  (lazyList-def var))
-
-  (def llist  (lazyList-def var))
-  (def nVariant   (replaceLazy-def var) )
-
-  
-
-  (def varname (variant-name var))  ;; name of the variant or dataconstructor
-  (update-env! varname              ;; variant data constructor, eg. Zero, Succ
+(define(interp-variant name var env)  
+  ;; name of the variant or dataconstructor
+  (def varname (variant-name var))  
+  ;; variant data constructor, eg. Zero, Succ
+  (update-env! varname
                (λ (args) (structV name varname args))
                env)
-  (update-env! (string->symbol (string-append (symbol->string varname) "?")) ;; variant predicate, eg. Zero?, Succ?
+  ;; variant predicate, eg. Zero?, Succ?
+  (update-env! (string->symbol (string-append (symbol->string varname) "?"))
                (λ (v) (symbol=? (structV-variant (first v)) varname))
                env))
 
@@ -416,10 +227,10 @@
 
 ;; run :: s-expr -> number                                                                         my shit
 (define(run prog)
-    ;(println (interp (lcal (list List+ length+ ) (lazyParse(parse prog)))   empty-env))
-    ;(pretty-printing (interp (lcal (list List+ length+ ) (parse prog))   empty-env))
-      (pretty-printing (strict (interp  (lcal (list List+ length+ ) (parse prog))   empty-env) ))
-
+    ;(println (interp (lcal (list List+ length+ ) (parse prog))   empty-env))
+    (pretty-printing (interp (lcal (list List+ length+ ) (parse prog))   empty-env))
+  #; (interp (lcal (list List+ length+ ) (parse prog))   empty-env)
+  #; (interp (parse prog)   empty-env)
   )
 
 
@@ -438,12 +249,10 @@ update-env! :: Sym Val Env -> Void
 (def empty-env  (mtEnv))
 
 (define(env-lookup id env)
-  ;(println id)
   (match env
     [(mtEnv) (error 'env-lookup "no binding for identifier: ~a" id)]
     [(aEnv bindings rest)
      (def binding (assoc id bindings))
-  ;;;;;;;;;;   (println bindings)
      (if binding
          (cdr binding)
          (env-lookup id rest))]))
@@ -459,6 +268,7 @@ update-env! :: Sym Val Env -> Void
 
 ;; imperative update of env, adding/overring the binding for id.
 (define(update-env! id val env)
+ ; (println env)
   (set-aEnv-bindings! env (cons (cons id val) (aEnv-bindings env))))
 
 ;;;;;;;
@@ -521,10 +331,6 @@ update-env! :: Sym Val Env -> Void
                                   (prim-app '+ (list (num 1) (app (id 'length) (list (id 'b) ))))
                                   ))))))
 
-
-
-
-
 ;;-
 
 
@@ -532,6 +338,7 @@ update-env! :: Sym Val Env -> Void
 
 
 (define (concatStr listr)
+
   (match listr
     [(cons a b) (string-append (if (number? a)
                                    (number->string a)
@@ -595,38 +402,14 @@ update-env! :: Sym Val Env -> Void
 
 (print-only-errors #t)
 
-(parse '{local {{datatype T 
-                              {C {lazy a}}}
-                    {define x {C {/ 1 0}}}}
-              {T? x}})
-;;
-#;(run '{local {{datatype T 
-                              {C {lazy a}}}
-                    {define x {C {/ 1 0}}}}
-              {T? x}})
 
-     
+#;(structV 'List 'Cons (list 5 (structV 'List 'Empty '())))
+#;(structV 'List 'list (list 5 ))
+#;(pretty-printing (structV 'List 'list (list 5 )))
 
-(test (run '{local {{datatype T 
-                              {C {lazy a}}}
-                    {define x {C {/ 1 0}}}}
-              {T? x}})
-      #t)
-
-(test
-(run '{local {{datatype T 
-                  {C {lazy a}}}
-                {define x {C {+ 1 0}}}
-                {define y {C {/ 1 0}}}}
-          {match x
-            {case {C a} => a}}})
-1)
-
-
-
-
-
-;(run '{{fun {x y} x} 42 {/ 1 0}})
+#;(structV 'List 'Cons (list 2 (structV 'List 'Cons (list 4 (structV 'List 'Cons (list 6 (structV 'List 'Empty '())))))))
+#;(structV 'List 'list (list 2 4 6 ))
+#;(pretty-printing (structV 'List 'list (list 2 4 6 )))
 
 
 
@@ -640,30 +423,6 @@ update-env! :: Sym Val Env -> Void
 
 
 
-#;(test
-   (run '{local {{datatype Cache 
-                           {Empty} 
-                           {Cons a b}}
-                 {define length {fun {l} 
-                                   {match l
-                                     {case {Empty} => 0}
-                                     {case {Cons a b} => {+ 1 {length b} }}}}}}
-           {length {Cons {Empty} {Empty}}}})
-   1)
-
-
-
-
-
-
-
-(test (run '{{fun {x  {lazy y}} x} 1 {/ 1 0}}) 1)
-(test (run '{{fun {{lazy x}  {lazy y}} x} 1 {/ 1 0}}) 1)
-
-(println "-----fail----")
-(test/exn (run '{{fun {x  y} x} 1 {/ 1 0}}) "/: division by zero")
-(test/exn (run '{{fun {x  {lazy y}} y} 1 {/ 1 0}}) "/: division by zero")
-(println "-----fail----")
 
 
 
