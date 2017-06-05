@@ -367,17 +367,16 @@
 
 ; interp-variant :: String String Env -> Void
 (define(interp-variant name var env)
- ; (println  var)
- ; (println  (variant-params var))
-  (print "nVariant: ")  (println  (replaceLazy-def var)  )
-  (print "llist:    ")  (println  (lazyList-def var))
-
+  
   (def llist  (lazyList-def var))
   (def nVariant   (replaceLazy-def var) )
 
-  
+  (print "llist:    ")  (println  llist)
+  (print "nVariant: ")  (println  nVariant  )
+  (print "nVariant: ")  (println  nVariant  )
 
   (def varname (variant-name var))  ;; name of the variant or dataconstructor
+  (print "structV:: ")  (println  (structV name varname 'args)  )
   (update-env! varname              ;; variant data constructor, eg. Zero, Succ
                (λ (args) (structV name varname args))
                env)
