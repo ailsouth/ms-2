@@ -48,7 +48,8 @@
 
 ; estructuras de datos
 (deftype Struct
-  (structV name variant values))
+  (structV name variant values)
+  )
 
 ; caso en pattern matching
 (deftype Case
@@ -164,11 +165,13 @@
   (lexpr exp bool)
   )
 
-(define (lazyList fun-expr)
+(define (lazyList fun-expr env)
   (match fun-expr
     [ (fun id body) (map (lambda (i) (match i
                                        [(list 'lazy x) #t]
                                        [else #f])) id)]
+
+    [ (id x) (env-lookupLazy (string->symbol  (string-append (symbol->string  x) "Lazy")) env)]
     [else #f]
     )
   )
@@ -213,23 +216,53 @@
   )
 
 
-(define  (lazyApp fun-expr arg-expr-list env )                                         ;MINE
+
+
+
+
+
+(define  (lazyApp fun-expr arg-expr-list env )                               ;MINE
 
   (def Newfun-expr (replaceLazy fun-expr))
-  (def llist (lazyList fun-expr))
-  (def ltuplas (lazyTuplas arg-expr-list (lazyList fun-expr)))
+  (def llist (lazyList fun-expr env))
+  (def ltuplas (lazyTuplas arg-expr-list (lazyList fun-expr env)))
+
+  
   (  (interp Newfun-expr env)
      (map  (λ (e)  (matchLazy e env)     )
            ltuplas)
      )
-  )
+  ) 
 
 
 
 
 
 
-;; interp :: Expr Env -> number/procedure/Struct
+
+
+
+
+
+
+
+
+
+
+
+
+(define(env-lookupLazy id env)
+  ;(println id)
+  (match env
+    [(mtEnv) #f]
+    [(aEnv bindings rest)
+     (def binding (assoc id bindings))
+     (if binding
+         (cdr binding)
+         (env-lookupLazy id rest))]))
+
+
+;; interp :: Expr Env -> number/procedure/Struct 
 (define(interp expr env)
   (match expr
     ; literals
@@ -244,7 +277,7 @@
           (interp f env))]
     
     ; identifier
-    [(id x) (strict (env-lookup x env))]
+    [(id x) (strict (env-lookup x env))            ]
     
     ; function (notice the meta interpretation)
     [(fun ids body)
@@ -278,29 +311,6 @@
 
 
 
-;defs todo el rato
-#;(list (datatype 'List (list (variant 'Empty '())
-                              (variant 'Cons '(a b))))
-        (dfine 'length (fun '(l) (mtch (id 'l) (list (cse (constrP 'Empty '())
-                                                          (num 0))
-                                                     (cse (constrP 'Cons (list (idP 'a) (idP 'b)))
-                                                          (prim-app '+ (list (num 1) (app (id 'length) (list (id 'b)))))))))))
-
-;defs:------
-;body:
-#;(app (fun '(x (lazy y)) (id 'x))                            ;fun-expr
-       (list (num 42)
-             (prim-app '/ (list (num 1) (num 0)))))  ;arg-expr-list
-
-;------
-
-;defs:
-#;(list (datatype 'T (list (variant 'C '((lazy a)))))
-        (dfine 'x (app (id 'C) (list (prim-app '/ (list (num 1) (num 0)))))))
-
-;body(s):
-#;  (app (id 'T?) (list (id 'x)))
-
 
 (define (lazyList-def var)
   (match var
@@ -330,40 +340,29 @@
   )
 
 
-(define(env-lookup-def id env)
-  ;(println id)
-  (match env
-    [(mtEnv) #f]
-    [(aEnv bindings rest)
-     (def binding (assoc id bindings))
-  ;;;;;;;;;;   (println bindings)
-     (if binding
-         (cdr binding)
-         (env-lookup-def id rest))]))
+
 
 ; interp-def :: Def Env -> Void
 (define(interp-def d env)
   ;(println d)
   (match d
-    [(dfine id val-expr)     ; (println id)
-                             ; (println val-expr)
-                            ; ; (println env)
-                             ;; (println (env-lookup-def 'C env))
-                              ;(println  "")
-                              
-                               (update-env! id (exprV val-expr env (box #f)) env)
+    [(dfine id val-expr)
+     
+     (update-env! id (exprV val-expr env (box #f)) env)
      ;(update-env! id (interp val-expr env) env)
      ]
     [(datatype name variants)     ;; extend environment with new definitions corresponding to the datatype
-         (interp-datatype name env)
-         (for-each (λ (v) (interp-variant name v env)) variants)]))
+     (interp-datatype name env)
+     (for-each (λ (v) (interp-variant name v env)) variants)]))
 
 ; interp-datatype :: String Env -> Void
 (define(interp-datatype name env)  ; datatype predicate, eg. Nat?
- ; (println name)
   (update-env! (string->symbol (string-append (symbol->string name) "?"))
                (λ (v) (symbol=? (structV-name (first v)) name))
-               env))
+               env)
+  #;(update-env! (string->symbol (string-append (symbol->string name) "?"))
+                 (λ (v) (symbol=? (structV-name (first v)) name))
+                 env))
 
 ; interp-variant :: String String Env -> Void
 (define(interp-variant name var env)
@@ -371,18 +370,28 @@
   (def llist  (lazyList-def var))
   (def nVariant   (replaceLazy-def var) )
 
-  (print "llist:    ")  (println  llist)
-  (print "nVariant: ")  (println  nVariant  )
-  (print "nVariant: ")  (println  nVariant  )
 
   (def varname (variant-name var))  ;; name of the variant or dataconstructor
-  (print "structV:: ")  (println  (structV name varname 'args)  )
+
+
+
+  
+
   (update-env! varname              ;; variant data constructor, eg. Zero, Succ
                (λ (args) (structV name varname args))
                env)
   (update-env! (string->symbol (string-append (symbol->string varname) "?")) ;; variant predicate, eg. Zero?, Succ?
-               (λ (v) (symbol=? (structV-variant (first v)) varname))
-               env))
+               (λ (v)   (symbol=? (structV-variant (first v)) varname))                 
+               env)
+  (update-env! (string->symbol (string-append (symbol->string varname) "Lazy")) ;; variant predicate, eg. ZeroLazy, SuccLazy
+               llist
+               env)
+
+  (update-env! (string->symbol (string-append (symbol->string varname) "?Lazy")) ;; variant predicate, eg. ZeroLazy, SuccLazy
+               llist
+               env)
+  
+  )
 
 ;;;;
 ; pattern matcher
@@ -549,16 +558,16 @@ update-env! :: Sym Val Env -> Void
 ; (structV name variant values)
 (define (pretty-printing expr)
   (let ([listedExpr (pretty-list expr)])
-  (match listedExpr
-    [(structV name variant values)
-     (if (empty? values)
-         (string-append "{" (string-append (symbol->string (structV-variant listedExpr)) "}" ))
-         (string-append "{" (string-append (symbol->string (structV-variant listedExpr))
-                                           (string-append " " (string-append
-                                                               (concatStr (map pretty-printing values))
-                                                               "}")) )) )]
-    [else listedExpr]
-    )   )
+    (match listedExpr
+      [(structV name variant values)
+       (if (empty? values)
+           (string-append "{" (string-append (symbol->string (structV-variant listedExpr)) "}" ))
+           (string-append "{" (string-append (symbol->string (structV-variant listedExpr))
+                                             (string-append " " (string-append
+                                                                 (concatStr (map pretty-printing values))
+                                                                 "}")) )) )]
+      [else listedExpr]
+      )   )
   )
   
 (define (pretty-list expr)
@@ -567,6 +576,7 @@ update-env! :: Sym Val Env -> Void
                                           (structV 'List 'list (getList expr))
                                           (structV 'List 'Cons (cons (pretty-list a) (pretty-list b)))
                                           )     ]
+
     [else expr])
   )
 
@@ -578,86 +588,31 @@ update-env! :: Sym Val Env -> Void
     ))
 
 (define (getList lst)
+  
   (match lst
     [(structV 'List 'Empty '()) '()]
     [(structV 'List 'Cons (list a b))  (cons (pretty-list a) (getList b))]
    ))
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;   MYTESTS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;   MYTESTS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;real niga hours
 
 
 (print-only-errors #t)
 
-(parse '{local {{datatype T 
-                              {C {lazy a}}}
-                    {define x {C {/ 1 0}}}}
-              {T? x}})
-;;
-#;(run '{local {{datatype T 
-                              {C {lazy a}}}
-                    {define x {C {/ 1 0}}}}
-              {T? x}})
-
-     
-
-(test (run '{local {{datatype T 
-                              {C {lazy a}}}
-                    {define x {C {/ 1 0}}}}
-              {T? x}})
-      #t)
-
-(test
-(run '{local {{datatype T 
-                  {C {lazy a}}}
-                {define x {C {+ 1 0}}}
-                {define y {C {/ 1 0}}}}
-          {match x
-            {case {C a} => a}}})
-1)
-
-
-
-
-
-;(run '{{fun {x y} x} 42 {/ 1 0}})
-
-
-
-
-
-
-
-
-
-
-
-
-
-#;(test
-   (run '{local {{datatype Cache 
-                           {Empty} 
-                           {Cons a b}}
-                 {define length {fun {l} 
-                                   {match l
-                                     {case {Empty} => 0}
-                                     {case {Cons a b} => {+ 1 {length b} }}}}}}
-           {length {Cons {Empty} {Empty}}}})
-   1)
-
-
-
-
-
-
-
-(test (run '{{fun {x  {lazy y}} x} 1 {/ 1 0}}) 1)
-(test (run '{{fun {{lazy x}  {lazy y}} x} 1 {/ 1 0}}) 1)
 
 (println "-----fail----")
 (test/exn (run '{{fun {x  y} x} 1 {/ 1 0}}) "/: division by zero")
 (test/exn (run '{{fun {x  {lazy y}} y} 1 {/ 1 0}}) "/: division by zero")
+
+(test/exn (run '{local {{datatype T 
+                              {C a}}
+                    {define x {C {/ 1 0}}}}
+              {T? x}})
+      "")
+
 (println "-----fail----")
+
 
 
 
@@ -707,7 +662,8 @@ update-env! :: Sym Val Env -> Void
 (test (run '{local {{datatype Nat 
                               {Zero} 
                               {Succ n}}}
-              {Nat? {Zero}}}) #t)
+              {Nat? {Zero}}})
+      #t)
 
 
 (test (run '{List? {Empty}}) #t)
@@ -773,6 +729,30 @@ update-env! :: Sym Val Env -> Void
 
 (test (pretty-printing (structV 'Bin 'Val '(1)))
       "{Val 1}")
+
+
+
+(test (run '{local {{datatype T 
+                              {C {lazy a}}}
+                    {define x {C {/ 1 0}}}}
+              {T? x}})
+      #t)
+
+(test
+ (run '{local {{datatype T 
+                         {C {lazy a}}}
+               {define x {C {+ 1 2}}}
+               {define y {C {/ 1 0}}}}
+         {match x
+           {case {C a} => a}}})
+ 3)
+
+
+
+
+(test (run '{{fun {x  {lazy y}} x} 1 {/ 1 0}}) 1)
+(test (run '{{fun {{lazy x}  {lazy y}} x} 1 {/ 1 0}}) 1)
+
 
 
 
